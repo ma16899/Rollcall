@@ -38,6 +38,7 @@
   .stat.absent{background:var(--absent)} .stat.leave{background:var(--leave)}
 
   main{padding:12px}
+  .hint{margin-bottom:10px;color:var(--muted)}
   .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}
   .card{background:var(--present-bg);border:4px solid var(--present);border-radius:18px;padding:12px;display:flex;flex-direction:column;gap:10px}
   .card[data-status="late"]{background:var(--late-bg);border-color:var(--late)}
@@ -48,6 +49,11 @@
   .name{flex:1;font-size:1.4rem;font-weight:800;overflow-wrap:anywhere}
   header label{font-weight:700}
   .seat small{display:block;font-size:.75rem;line-height:1}
+  .score small{display:block;font-size:.85rem;font-weight:700;color:var(--muted);line-height:1.2}
+  .gender{display:inline-block;margin-left:8px;padding:2px 8px;border-radius:8px;font-size:.9rem;font-style:normal;vertical-align:middle;color:#fff;white-space:nowrap}
+  .gender.boy{background:#0369a1}
+  .gender.girl{background:#be185d}
+  .desk .gender{margin-left:4px;padding:0 5px;font-size:.85rem;color:#fff}
   .edit{min-width:48px;padding:0}
   .del{min-width:48px;padding:0;color:var(--muted)}
   .statuses{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
@@ -57,11 +63,11 @@
   .statuses [data-set="late"][aria-pressed="true"]{background:var(--late);border-color:var(--late)}
   .statuses [data-set="absent"][aria-pressed="true"]{background:var(--absent);border-color:var(--absent)}
   .statuses [data-set="leave"][aria-pressed="true"]{background:var(--leave);border-color:var(--leave)}
-  .scorerow{display:grid;grid-template-columns:1.2fr 1fr 1fr 1fr;gap:6px;align-items:center}
+  .scorerow{display:grid;grid-template-columns:1.2fr 1.5fr 1.5fr;gap:6px;align-items:center}
   .score{position:relative;text-align:center;font-size:2rem;font-weight:900;font-variant-numeric:tabular-nums}
   .score span{display:inline-block}
   .scorerow button{min-height:56px;padding:4px;font-size:1.15rem}
-  .plus{background:var(--ink);border-color:var(--ink);color:#fff}
+  .plus{background:#c2410c;border-color:#c2410c;color:#fff}
   .bump span{animation:bump .4s ease}
   @keyframes bump{40%{transform:scale(1.6)}}
   .float{position:absolute;left:50%;top:0;font-size:1.2rem;font-style:normal;pointer-events:none;animation:float .7s ease-out forwards}
@@ -149,6 +155,7 @@
 </section>
 
 <main>
+  <p class="hint">大數字是<b id="hintDate"></b>的分數，小字「累計」是歷次總分。</p>
   <div class="grid" id="grid"></div>
   <div id="mapView">
     <div class="row toolbar">
@@ -183,7 +190,7 @@
 <dialog id="importDlg">
   <form method="dialog" id="importForm">
     <h2>批次貼上名單</h2>
-    <p>每行一位：「座號 姓名」，混班可用「班級 座號 姓名」（可用空格、Tab 或逗號分隔，可直接從 Excel 複製）。也支援座號、姓名各佔一行。</p>
+    <p>每行一位：「座號 姓名」，混班可用「班級 座號 姓名」（可用空格、Tab 或逗號分隔，可直接從 Excel 複製）。也支援座號、姓名各佔一行。要標性別，請在姓名後加「男」或「女」，例如：1 王小明 男。</p>
     <textarea id="importText" placeholder="1 王小明&#10;2 陳美麗&#10;3 林大華"></textarea>
     <label class="check"><input type="checkbox" id="replaceChk">取代目前整個名單（分數、出席與評分紀錄會清除）</label>
     <div class="actions">
@@ -200,6 +207,11 @@
       <input id="addGrp" inputmode="numeric" placeholder="學生班級（混班才需填，例如 703）" aria-label="學生班級">
       <input id="addSeat" inputmode="numeric" placeholder="座號" aria-label="座號" required>
       <input id="addName" placeholder="姓名" aria-label="姓名" required>
+      <select id="addGender" aria-label="性別">
+        <option value="">性別（未設定）</option>
+        <option value="男">男</option>
+        <option value="女">女</option>
+      </select>
     </div>
     <div class="actions">
       <button type="button" data-close>取消</button>
@@ -239,6 +251,7 @@
   </div>
   <div class="stack" style="margin-top:12px">
     <button class="primary" id="dailyBtn">每日總表（每天每位學生一列）</button>
+    <button class="primary" id="statBtn">分數統計（每位學生一列、每天一欄）</button>
     <button class="primary" id="detailBtn">評分明細（每一次評分一列）</button>
   </div>
   <div class="actions"><button data-close>關閉</button></div>
@@ -283,6 +296,7 @@
   <div id="drawSeat"></div>
   <div id="drawName" aria-live="polite"></div>
   <div id="drawScore"></div>
+  <p id="drawInfo" style="margin-top:8px"></p>
   <div id="drawBtns">
     <button class="plus" data-delta="1">+1 分</button>
     <button class="plus" data-delta="2">+2 分</button>
@@ -361,6 +375,19 @@
     return e;
   }
 
+  // 某日分數＝該日所有評分紀錄加總
+  const sumOf = list => list.reduce((sum, x) => sum + x.delta, 0);
+
+  function fillScore(box, s) {
+    box.append(el('span', '', sumOf(logOf(s.id))), el('small', 'total', `累計 ${s.score}`));
+  }
+
+  function nameBox(s) {
+    const box = el('div', 'name', s.name);
+    if (s.gender) box.append(el('em', s.gender === '男' ? 'gender boy' : 'gender girl', s.gender));
+    return box;
+  }
+
   function seatBadge(s) {
     const b = el('div', 'seat', s.seat);
     if (s.grp) b.prepend(el('small', '', s.grp));
@@ -380,7 +407,7 @@
     edit.className = 'edit';
     edit.dataset.edit = '1';
     edit.setAttribute('aria-label', `修改 ${s.name}`);
-    head.append(seatBadge(s), el('div', 'name', s.name), edit, del);
+    head.append(seatBadge(s), nameBox(s), edit, del);
 
     const statuses = el('div', 'statuses');
     for (const [k, label] of Object.entries(STATUS)) {
@@ -392,9 +419,9 @@
 
     const row = el('div', 'scorerow');
     const score = el('div', 'score');
-    score.append(el('span', '', s.score));
+    fillScore(score, s);
     row.append(score);
-    for (const [d, label, kind] of [[1, '+1', 'plus'], [2, '+2', 'plus'], [-1, '-1', '']]) {
+    for (const [d, label, kind] of [[1, '+1', 'plus'], [-1, '-1', '']]) {
       const b = el('button', kind, label);
       b.dataset.delta = d;
       b.setAttribute('aria-label', `${s.name} ${label} 分`);
@@ -465,6 +492,12 @@
     return { L, rows, taken };
   }
 
+  function deskLabel(s, status) {
+    const label = el('small', '', `${seatLabel(s)}${status}`);
+    if (s.gender) label.append(el('em', s.gender === '男' ? 'gender boy' : 'gender girl', s.gender));
+    return label;
+  }
+
   function desk(s, r, c) {
     const b = el('button', 'desk');
     b.dataset.cell = `${r},${c}`;
@@ -478,9 +511,9 @@
     b.dataset.status = statusOf(s.id);
     if (s.id === chosen) b.classList.add('chosen');
     const score = el('span', 'score');
-    score.append(el('span', '', s.score));
+    fillScore(score, s);
     const status = b.dataset.status === 'present' ? '' : `・${STATUS[b.dataset.status]}`;
-    b.append(el('small', '', `${seatLabel(s)}${status}`), el('strong', '', s.name), score);
+    b.append(deskLabel(s, status), el('strong', '', s.name), score);
     return b;
   }
 
@@ -520,6 +553,7 @@
     $('classSelect').replaceChildren(...data.classes.map(c => new Option(c.name, c.id)));
     $('classSelect').value = cls().id;
     $('dateInput').value = date;
+    $('hintDate').textContent = ` ${date} `;
     const isMap = data.view === 'map';
     const has = cls().students.length > 0;
     $('grid').hidden = isMap;
@@ -593,7 +627,8 @@
     save();
     beep(delta > 0);
     document.querySelectorAll(`[data-id="${id}"] .score`).forEach(box => {
-      box.querySelector('span').textContent = s.score;
+      box.querySelector('span').textContent = sumOf(logOf(id));
+      box.querySelector('.total').textContent = `累計 ${s.score}`;
       pop(box, delta);
     });
   }
@@ -766,6 +801,10 @@
       if (name) list.push({ grp: '', seat: String(Number(normSeat(m[1]))), name });
       else bad.push(line);
     }
+    for (const item of list) {
+      const m = item.name.match(/^(.*?)[\s,，、]+(男|女)生?$/);
+      if (m && m[1].trim()) { item.name = m[1].trim(); item.gender = m[2]; }
+    }
     return { list, bad };
   }
 
@@ -788,7 +827,7 @@
       let added = 0, updated = 0;
       for (const item of list) {
         const old = k.students.find(s => s.seat === item.seat && (s.grp || '') === item.grp);
-        if (old) { old.name = item.name; updated++; }
+        if (old) { old.name = item.name; if (item.gender) old.gender = item.gender; updated++; }
         else { k.students.push({ id: uid(), ...item, score: 0 }); added++; }
       }
       sortStudents(); save(); render();
@@ -807,7 +846,7 @@
     $('addForm').reset();
     $('addTitle').textContent = s ? '修改學生資料' : '新增學生';
     $('addOk').textContent = s ? '儲存' : '新增';
-    if (s) { $('addGrp').value = s.grp || ''; $('addSeat').value = s.seat; $('addName').value = s.name; }
+    if (s) { $('addGrp').value = s.grp || ''; $('addSeat').value = s.seat; $('addName').value = s.name; $('addGender').value = s.gender || ''; }
     $('addDlg').showModal();
   }
   $('addBtn').onclick = () => openStudentForm(null);
@@ -817,10 +856,11 @@
     if (!/^\d+$/.test(raw)) { alert('座號請輸入數字'); return; }
     if (!name) { alert('請輸入姓名'); return; }
     const seat = String(Number(raw)), grp = normSeat($('addGrp').value);
+    const gender = $('addGender').value;
     if (cls().students.some(s => s.seat === seat && (s.grp || '') === grp && s.id !== editing)) { alert(`座號 ${seat} 已存在`); return; }
     const old = editing && findStudent(editing);
-    if (old) Object.assign(old, { grp, seat, name });   // id 不變，分數與紀錄、座位都保留
-    else cls().students.push({ id: uid(), grp, seat, name, score: 0 });
+    if (old) Object.assign(old, { grp, seat, name, gender });   // id 不變，分數與紀錄、座位都保留
+    else cls().students.push({ id: uid(), grp, seat, name, gender, score: 0 });
     sortStudents(); save(); render();
     $('addDlg').close();
     toast(old ? `已更新 ${seatLabel({ grp, seat })} ${name}` : `已新增 ${name}`);
@@ -863,8 +903,10 @@
   /* ---------- 隨機抽籤 ---------- */
   let picked = null, last = null, rolling = null;
 
+  const drawText = s => `當日 ${sumOf(logOf(s.id))} 分・累計 ${s.score} 分`;
+
   function showStudent(s) {
-    $('drawSeat').textContent = seatLabel(s);
+    $('drawSeat').textContent = seatLabel(s) + (s.gender ? `・${s.gender}` : '');
     $('drawName').textContent = s.name;
   }
   function setDrawButtons(disabled) {
@@ -876,12 +918,20 @@
     syncDate();
     const pool = cls().students.filter(s => statusOf(s.id) === 'present');
     if (!pool.length) { toast('目前沒有「出席」的學生可抽'); return; }
-    // 人數大於 1 時，避免連續抽到同一人
-    const choices = pool.length > 1 ? pool.filter(s => s.id !== last) : pool;
+    // 一輪內不重複：出席的人都抽過後才開始下一輪（重開程式仍記得）
+    const k = cls();
+    let drawn = k.drawn || [];
+    let choices = pool.filter(s => !drawn.includes(s.id));
+    if (!choices.length) {
+      drawn = [];
+      // 新一輪的第一位避免和上一位相同
+      choices = pool.length > 1 ? pool.filter(s => s.id !== last) : pool;
+    }
     const winner = choices[randomIndex(choices.length)];
     picked = null;
     setDrawButtons(true);
     $('drawScore').textContent = '抽籤中…';
+    $('drawInfo').textContent = '';
     showStudent(pool[randomIndex(pool.length)]);
     if (!$('drawDlg').open) $('drawDlg').showModal();
 
@@ -891,8 +941,14 @@
       if (++ticks < 12) { showStudent(pool[randomIndex(pool.length)]); return; }
       clearInterval(rolling);
       picked = last = winner.id;
+      k.drawn = [...drawn, winner.id];
+      save();
+      const left = pool.filter(s => !k.drawn.includes(s.id)).length;
+      $('drawInfo').textContent = pool.length === 1
+        ? '⚠️ 目前只有 1 位學生是「出席」，所以只會抽到這一位。'
+        : `出席可抽 ${pool.length} 人・本輪還有 ${left} 人未抽到`;
       showStudent(winner);
-      $('drawScore').textContent = `目前積分：${winner.score}`;
+      $('drawScore').textContent = drawText(winner);
       setDrawButtons(false);
       beep(true);
     }, 80);
@@ -906,7 +962,7 @@
     const delta = Number(b.dataset.delta);
     syncDate();
     addScore(picked, delta, '抽籤回答');
-    $('drawScore').replaceChildren(el('span', '', `目前積分：${findStudent(picked).score}`));
+    $('drawScore').replaceChildren(el('span', '', drawText(findStudent(picked))));
     pop($('drawScore'), delta);
   });
 
@@ -1009,13 +1065,13 @@
     if (!from || !to || from > to) { alert('請確認開始與結束日期'); return; }
     const dates = recordedDates().filter(d => d >= from && d <= to);
     const rows = [detail
-      ? ['日期', '時間', '班級', '上課位置', '學生班級', '座號', '姓名', '評分項目', '分數']
-      : ['日期', '班級', '上課位置', '學生班級', '座號', '姓名', '出席狀態', '點名確認', '當日加減分', '當日評分紀錄', '目前總分']];
+      ? ['日期', '時間', '班級', '上課位置', '學生班級', '座號', '姓名', '性別', '評分項目', '分數']
+      : ['日期', '班級', '上課位置', '學生班級', '座號', '姓名', '性別', '出席狀態', '點名確認', '當日加減分', '當日評分紀錄', '目前總分']];
     for (const d of dates) {
       for (const s of k.students) {
         const list = ((k.log || {})[d] || {})[s.id] || [];
         if (detail) {
-          list.forEach(x => rows.push([d, x.time || '', k.name, x.place || '', s.grp || '', Number(s.seat), s.name, x.label, x.delta]));
+          list.forEach(x => rows.push([d, x.time || '', k.name, x.place || '', s.grp || '', Number(s.seat), s.name, s.gender || '', x.label, x.delta]));
           continue;
         }
         const status = (k.attendance[d] || {})[s.id];
@@ -1024,7 +1080,7 @@
         list.forEach(x => count[x.label] = (count[x.label] || 0) + 1);
         // 同一天換過教室時，一併列出
         const places = new Set([(k.place || {})[d], ...list.map(x => x.place)].filter(Boolean));
-        rows.push([d, k.name, [...places].join('、'), s.grp || '', Number(s.seat), s.name,
+        rows.push([d, k.name, [...places].join('、'), s.grp || '', Number(s.seat), s.name, s.gender || '',
           status ? STATUS[status] : done ? '無紀錄' : STATUS.present,
           done && status ? '已完成' : '未確認',
           list.reduce((sum, x) => sum + x.delta, 0),
@@ -1035,6 +1091,20 @@
     if (rows.length === 1) { alert(detail ? '此範圍沒有評分紀錄' : '此範圍沒有紀錄。上課點名後請按「完成點名」。'); return; }
     showOutput(rows, detail ? '評分明細' : '每日總表', from, to);
   }
+
+  function exportStats() {
+    const k = cls(), from = $('fromInput').value, to = $('toInput').value;
+    if (!from || !to || from > to) { alert('請確認開始與結束日期'); return; }
+    const dates = recordedDates().filter(d => d >= from && d <= to);
+    if (!dates.length) { alert('此範圍沒有紀錄'); return; }
+    const rows = [['班級', '學生班級', '座號', '姓名', '性別', ...dates, '期間合計', '目前累計']];
+    for (const s of k.students) {
+      const days = dates.map(d => sumOf(((k.log || {})[d] || {})[s.id] || []));
+      rows.push([k.name, s.grp || '', Number(s.seat), s.name, s.gender || '', ...days, days.reduce((a, b) => a + b, 0), s.score]);
+    }
+    showOutput(rows, '分數統計', from, to);
+  }
+  $('statBtn').onclick = exportStats;
 
   $('exportBtn').onclick = () => {
     syncDate();
