@@ -1,0 +1,1071 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>班級點名與課堂評分系統</title>
+<style>
+  :root{
+    --bg:#eef1f6; --ink:#0f172a; --muted:#475569; --line:#cbd5e1; --card:#fff;
+    --primary:#1d4ed8;
+    --present:#15803d; --present-bg:#fff;
+    --late:#a16207;    --late-bg:#fde68a;
+    --absent:#b91c1c;  --absent-bg:#fecaca;
+    --leave:#6d28d9;   --leave-bg:#ddd6fe;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  [hidden]{display:none!important}
+  body{font-family:system-ui,-apple-system,"PingFang TC","Microsoft JhengHei",sans-serif;background:var(--bg);color:var(--ink);line-height:1.4}
+  button,input,select,textarea{font:inherit;color:inherit}
+  button{min-height:48px;padding:8px 16px;border:2px solid var(--line);border-radius:12px;background:#fff;font-weight:700;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent;user-select:none}
+  button:active{transform:scale(.95)}
+  button:disabled{opacity:.45;cursor:not-allowed}
+  :focus-visible{outline:3px solid var(--primary);outline-offset:2px}
+  .primary{background:var(--primary);border-color:var(--primary);color:#fff}
+  .danger{background:var(--absent);border-color:var(--absent);color:#fff}
+  input,select,textarea{min-height:48px;padding:8px 12px;border:2px solid var(--line);border-radius:12px;background:#fff;font-size:1rem;max-width:100%}
+  textarea{width:100%;min-height:200px;resize:vertical}
+
+  header{background:var(--bg);border-bottom:2px solid var(--line);padding:12px}
+  .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+  .spacer{flex:1}
+  h1{font-size:1.25rem;margin-bottom:8px}
+
+  .stats{position:sticky;top:0;z-index:5;background:var(--bg);padding:8px 12px;display:grid;grid-template-columns:repeat(5,1fr);gap:6px;box-shadow:0 3px 8px rgba(15,23,42,.12)}
+  .stat{border-radius:12px;padding:6px 2px;text-align:center;color:#fff;background:var(--ink);font-weight:700;font-size:.9rem}
+  .stat b{display:block;font-size:1.7rem;line-height:1.15;font-variant-numeric:tabular-nums}
+  .stat.present{background:var(--present)} .stat.late{background:var(--late)}
+  .stat.absent{background:var(--absent)} .stat.leave{background:var(--leave)}
+
+  main{padding:12px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}
+  .card{background:var(--present-bg);border:4px solid var(--present);border-radius:18px;padding:12px;display:flex;flex-direction:column;gap:10px}
+  .card[data-status="late"]{background:var(--late-bg);border-color:var(--late)}
+  .card[data-status="absent"]{background:var(--absent-bg);border-color:var(--absent)}
+  .card[data-status="leave"]{background:var(--leave-bg);border-color:var(--leave)}
+  .head{display:flex;align-items:center;gap:10px}
+  .seat{min-width:46px;height:46px;padding:0 6px;border-radius:10px;background:var(--ink);color:#fff;display:grid;place-items:center;font-weight:800;font-size:1.2rem}
+  .name{flex:1;font-size:1.4rem;font-weight:800;overflow-wrap:anywhere}
+  header label{font-weight:700}
+  .seat small{display:block;font-size:.75rem;line-height:1}
+  .edit{min-width:48px;padding:0}
+  .del{min-width:48px;padding:0;color:var(--muted)}
+  .statuses{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
+  .statuses button{padding:4px}
+  .statuses button[aria-pressed="true"]{color:#fff}
+  .statuses [data-set="present"][aria-pressed="true"]{background:var(--present);border-color:var(--present)}
+  .statuses [data-set="late"][aria-pressed="true"]{background:var(--late);border-color:var(--late)}
+  .statuses [data-set="absent"][aria-pressed="true"]{background:var(--absent);border-color:var(--absent)}
+  .statuses [data-set="leave"][aria-pressed="true"]{background:var(--leave);border-color:var(--leave)}
+  .scorerow{display:grid;grid-template-columns:1.2fr 1fr 1fr 1fr;gap:6px;align-items:center}
+  .score{position:relative;text-align:center;font-size:2rem;font-weight:900;font-variant-numeric:tabular-nums}
+  .score span{display:inline-block}
+  .scorerow button{min-height:56px;padding:4px;font-size:1.15rem}
+  .plus{background:var(--ink);border-color:var(--ink);color:#fff}
+  .bump span{animation:bump .4s ease}
+  @keyframes bump{40%{transform:scale(1.6)}}
+  .float{position:absolute;left:50%;top:0;font-size:1.2rem;font-style:normal;pointer-events:none;animation:float .7s ease-out forwards}
+  @keyframes float{from{transform:translate(-50%,0);opacity:1}to{transform:translate(-50%,-34px);opacity:0}}
+
+  .toolbar{margin-bottom:10px}
+  button[aria-pressed="true"].tog{background:var(--ink);border-color:var(--ink);color:#fff}
+  .toolbar label{display:flex;align-items:center;gap:6px;font-weight:700}
+  .scroll{overflow-x:auto;padding-bottom:8px}
+  .map{display:grid;gap:8px}
+  .podium{margin:8px auto;max-width:320px;padding:10px;border-radius:10px;background:var(--ink);color:#fff;text-align:center;font-weight:800}
+  .desk{min-height:104px;padding:4px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;border:4px solid var(--present);background:var(--present-bg);position:relative}
+  .desk[data-status="late"]{background:var(--late-bg);border-color:var(--late)}
+  .desk[data-status="absent"]{background:var(--absent-bg);border-color:var(--absent)}
+  .desk[data-status="leave"]{background:var(--leave-bg);border-color:var(--leave)}
+  .desk small{font-size:.85rem;color:var(--muted)}
+  .desk strong{font-size:1.15rem;overflow-wrap:anywhere;line-height:1.2}
+  .desk .score{font-size:1.5rem}
+  .desk.vacant{border:2px dashed var(--line);background:transparent}
+  .desk.chosen{outline:6px solid var(--primary);outline-offset:1px}
+  #studentDlg .del{display:none}
+  .acts{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+  .acts button{min-height:68px;font-size:1.2rem;color:#fff;background:var(--absent);border-color:var(--absent)}
+  .acts button.good{background:var(--present);border-color:var(--present);grid-column:1/-1}
+  .acts small{display:block;font-size:.9rem;font-weight:400}
+  #studentDlg .score{font-size:2.6rem}
+  .empty{text-align:center;padding:48px 16px;color:var(--muted);font-size:1.1rem}
+  .empty button{margin-top:16px}
+
+  dialog{margin:auto;width:min(560px,calc(100vw - 24px));max-height:90vh;overflow:auto;border:0;border-radius:20px;padding:20px;color:var(--ink)}
+  dialog::backdrop{background:rgba(15,23,42,.75)}
+  dialog h2{margin-bottom:12px}
+  dialog p{margin-bottom:12px}
+  .actions{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end;margin-top:16px}
+  .stack{display:grid;gap:8px}
+  .check{display:flex;align-items:center;gap:10px;min-height:48px}
+  .check input{width:24px;height:24px;min-height:0}
+  #drawDlg{text-align:center}
+  #drawSeat{font-size:1.5rem;color:var(--muted);font-weight:700}
+  #drawName{font-size:clamp(3rem,14vw,5.5rem);font-weight:900;color:var(--primary);overflow-wrap:anywhere;margin:8px 0}
+  #drawScore{font-size:1.4rem;font-weight:700;position:relative}
+  #drawBtns{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:16px}
+  #drawBtns button{min-height:72px;font-size:1.4rem}
+
+  #toast{position:fixed;left:50%;bottom:20px;transform:translateX(-50%);background:var(--ink);color:#fff;padding:12px 20px;border-radius:12px;font-weight:700;width:max-content;max-width:90vw;opacity:0;pointer-events:none;transition:opacity .2s;z-index:20}
+  #toast.show{opacity:1}
+  @media (prefers-reduced-motion:reduce){*{animation-duration:.01ms!important}}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>📋 班級點名與課堂評分</h1>
+  <div class="row">
+    <select id="classSelect" aria-label="選擇班級"></select>
+    <button id="addClassBtn">＋班級</button>
+    <button id="renameClassBtn">改名</button>
+    <button id="delClassBtn">刪班級</button>
+    <span class="spacer"></span>
+    <label>📍 上課位置 <select id="placeSelect"></select></label>
+    <input type="date" id="dateInput" aria-label="點名日期">
+  </div>
+  <div class="row" style="margin-top:8px">
+    <button class="primary" id="drawBtn">🎲 隨機點人回答</button>
+    <button id="doneBtn"></button>
+    <button id="importBtn">📥 批次貼上名單</button>
+    <button id="addBtn">➕ 新增學生</button>
+    <button id="exportBtn">📤 匯出 CSV 報表</button>
+    <button id="resetBtn">♻️ 重置／歸零</button>
+    <button id="soundBtn"></button>
+  </div>
+  <div class="row" style="margin-top:8px">
+    <button class="tog" data-view="list">🗂️ 卡片版面</button>
+    <button class="tog" data-view="map">🪑 座位表版面</button>
+  </div>
+</header>
+
+<section class="stats" aria-live="polite">
+  <div class="stat">全班<b id="cTotal">0</b></div>
+  <div class="stat present">出席<b id="cPresent">0</b></div>
+  <div class="stat late">遲到<b id="cLate">0</b></div>
+  <div class="stat absent">缺席<b id="cAbsent">0</b></div>
+  <div class="stat leave">請假<b id="cLeave">0</b></div>
+</section>
+
+<main>
+  <div class="grid" id="grid"></div>
+  <div id="mapView">
+    <div class="row toolbar">
+      <label>點座位時
+        <select id="tapMode">
+          <option value="panel">開啟評分／點名面板</option>
+          <option value="1">直接 +1 分</option>
+          <option value="2">直接 +2 分</option>
+          <option value="-1">直接 -1 分</option>
+        </select>
+      </label>
+      <button class="tog" id="arrangeBtn">✏️ 調整座位</button>
+      <button id="flipBtn"></button>
+    </div>
+    <div class="row toolbar" id="arrangeBar">
+      <label>直行數 <select id="colsSelect"></select></label>
+      <label>橫排數 <select id="rowsSelect"></select></label>
+      <button data-fill="row">依座號橫向排入</button>
+      <button data-fill="col">依座號直向排入</button>
+      <p>先點一位學生，再點目標座位即可移動或交換。</p>
+    </div>
+    <div class="podium" id="podiumTop">講台</div>
+    <div class="scroll"><div class="map" id="map"></div></div>
+    <div class="podium" id="podiumBottom">講台</div>
+  </div>
+  <div class="empty" id="empty">
+    <p>這個班級還沒有學生。</p>
+    <button class="primary" id="emptyImportBtn">📥 批次貼上名單</button>
+  </div>
+</main>
+
+<dialog id="importDlg">
+  <form method="dialog" id="importForm">
+    <h2>批次貼上名單</h2>
+    <p>每行一位：「座號 姓名」，混班可用「班級 座號 姓名」（可用空格、Tab 或逗號分隔，可直接從 Excel 複製）。也支援座號、姓名各佔一行。</p>
+    <textarea id="importText" placeholder="1 王小明&#10;2 陳美麗&#10;3 林大華"></textarea>
+    <label class="check"><input type="checkbox" id="replaceChk">取代目前整個名單（分數、出席與評分紀錄會清除）</label>
+    <div class="actions">
+      <button type="button" data-close>取消</button>
+      <button type="submit" class="primary">匯入</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="addDlg">
+  <form id="addForm">
+    <h2 id="addTitle">新增學生</h2>
+    <div class="stack">
+      <input id="addGrp" inputmode="numeric" placeholder="學生班級（混班才需填，例如 703）" aria-label="學生班級">
+      <input id="addSeat" inputmode="numeric" placeholder="座號" aria-label="座號" required>
+      <input id="addName" placeholder="姓名" aria-label="姓名" required>
+    </div>
+    <div class="actions">
+      <button type="button" data-close>取消</button>
+      <button type="submit" class="primary" id="addOk">新增</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="askDlg">
+  <form id="askForm">
+    <h2 id="askTitle"></h2>
+    <p id="askMsg"></p>
+    <input id="askInput" style="width:100%" aria-label="班級名稱">
+    <div class="actions">
+      <button type="button" data-close>取消</button>
+      <button type="submit" id="askOk"></button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="resetDlg">
+  <h2>重置／歸零</h2>
+  <p>請選擇項目，下一步會再次確認。僅影響目前班級。</p>
+  <div class="stack">
+    <button data-reset="att">重置所選日期的點名（全部改回出席）</button>
+    <button data-reset="score">全班分數歸零（保留評分紀錄）</button>
+    <button data-reset="both">兩者都重置</button>
+  </div>
+  <div class="actions"><button data-close>取消</button></div>
+</dialog>
+
+<dialog id="exportDlg">
+  <h2>匯出紀錄</h2>
+  <p>匯出目前班級在日期範圍內有點名或評分紀錄的日子。</p>
+  <div class="row">
+    <input type="date" id="fromInput" aria-label="開始日期"> 至 <input type="date" id="toInput" aria-label="結束日期">
+  </div>
+  <div class="stack" style="margin-top:12px">
+    <button class="primary" id="dailyBtn">每日總表（每天每位學生一列）</button>
+    <button class="primary" id="detailBtn">評分明細（每一次評分一列）</button>
+  </div>
+  <div class="actions"><button data-close>關閉</button></div>
+</dialog>
+
+<dialog id="outputDlg">
+  <h2 id="outputTitle"></h2>
+  <div class="stack">
+    <button class="primary" id="shareBtn">📨 分享／儲存到…</button>
+    <button class="primary" id="copyBtn">📋 複製內容（貼到試算表）</button>
+    <button id="downloadBtn">⬇️ 下載 CSV 檔</button>
+    <p id="outputMsg" role="status"></p>
+    <textarea id="outputText" readonly aria-label="報表內容" wrap="off"></textarea>
+  </div>
+  <div class="actions"><button data-close>關閉</button></div>
+</dialog>
+
+<dialog id="studentDlg">
+  <div id="studentBox"></div>
+  <div class="actions"><button data-close>關閉</button></div>
+</dialog>
+
+<dialog id="drawDlg">
+  <div id="drawSeat"></div>
+  <div id="drawName" aria-live="polite"></div>
+  <div id="drawScore"></div>
+  <div id="drawBtns">
+    <button class="plus" data-delta="1">+1 分</button>
+    <button class="plus" data-delta="2">+2 分</button>
+    <button data-delta="-1">-1 分</button>
+  </div>
+  <div class="actions" style="justify-content:center">
+    <button class="primary" id="againBtn">再抽一位</button>
+    <button data-close>關閉</button>
+  </div>
+</dialog>
+
+<div id="toast" role="status"></div>
+
+<script>
+(() => {
+  'use strict';
+  const KEY = 'classroom-rollcall-v1';
+  const STATUS = { present:'出席', late:'遲到', absent:'缺席', leave:'請假' };
+  // 評分面板項目：要增減或改分數，改這裡即可
+  const ACTIONS = [['發言積極', 1], ['睡覺', -1], ['講話', -1], ['不禮貌', -2], ['吃東西', -1]];
+  // 上課位置選項：第一個是預設值
+  const PLACES = ['原班級', '客語教室', '閩語教室', '平板教室'];
+  const $ = id => document.getElementById(id);
+  const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+
+  function today() {
+    const d = new Date(), p = n => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+  }
+
+  /* ---------- 資料 ---------- */
+  const newClass = name => ({ id: uid(), name, students: [], attendance: {} });
+
+  function load() {
+    let raw = null;
+    try {
+      raw = localStorage.getItem(KEY);
+      if (raw) {
+        const d = JSON.parse(raw);
+        if (Array.isArray(d.classes) && d.classes.length) return d;
+        throw new Error('格式錯誤');
+      }
+    } catch (e) {
+      console.warn(e);
+      if (raw) try { localStorage.setItem(KEY + '-backup', raw); } catch (_) {}
+    }
+    const c = newClass('我的班級');
+    return { classes: [c], current: c.id, sound: true };
+  }
+
+  let data = load();
+  let date = today();
+  let followToday = true;   // 未手動選日期時，跨日自動切到今天
+
+  function save() {
+    try { localStorage.setItem(KEY, JSON.stringify(data)); }
+    catch (e) { toast('⚠️ 無法儲存！請勿使用無痕模式，並先匯出 CSV'); }
+  }
+
+  const cls = () => data.classes.find(c => c.id === data.current) || data.classes[0];
+  const statusOf = id => (cls().attendance[date] || {})[id] || 'present';
+  const findStudent = id => cls().students.find(s => s.id === id);
+  const sortStudents = () => cls().students.sort((a, b) =>
+    (a.grp || '').localeCompare(b.grp || '', 'zh-Hant', { numeric: true }) || Number(a.seat) - Number(b.seat));
+  const seatLabel = s => `${s.grp ? s.grp + '・' : ''}${s.seat} 號`;
+
+  function syncDate() {
+    if (followToday && date !== today()) { date = today(); render(); }
+  }
+
+  /* ---------- 畫面 ---------- */
+  function el(tag, className, text) {
+    const e = document.createElement(tag);
+    if (className) e.className = className;
+    if (text !== undefined) e.textContent = text;
+    return e;
+  }
+
+  function seatBadge(s) {
+    const b = el('div', 'seat', s.seat);
+    if (s.grp) b.prepend(el('small', '', s.grp));
+    return b;
+  }
+
+  function card(s) {
+    const c = el('article', 'card');
+    c.dataset.id = s.id;
+    c.dataset.status = statusOf(s.id);
+
+    const head = el('div', 'head');
+    const del = el('button', 'del', '✕');
+    del.dataset.del = '1';
+    del.setAttribute('aria-label', `刪除 ${s.name}`);
+    const edit = el('button', 'del', '✏️');
+    edit.className = 'edit';
+    edit.dataset.edit = '1';
+    edit.setAttribute('aria-label', `修改 ${s.name}`);
+    head.append(seatBadge(s), el('div', 'name', s.name), edit, del);
+
+    const statuses = el('div', 'statuses');
+    for (const [k, label] of Object.entries(STATUS)) {
+      const b = el('button', '', label);
+      b.dataset.set = k;
+      b.setAttribute('aria-pressed', String(k === c.dataset.status));
+      statuses.append(b);
+    }
+
+    const row = el('div', 'scorerow');
+    const score = el('div', 'score');
+    score.append(el('span', '', s.score));
+    row.append(score);
+    for (const [d, label, kind] of [[1, '+1', 'plus'], [2, '+2', 'plus'], [-1, '-1', '']]) {
+      const b = el('button', kind, label);
+      b.dataset.delta = d;
+      b.setAttribute('aria-label', `${s.name} ${label} 分`);
+      row.append(b);
+    }
+
+    const more = el('button', '', '📝 行為評分');
+    more.dataset.open = '1';
+
+    c.append(head, statuses, row, more);
+    return c;
+  }
+
+  const logOf = id => ((cls().log || {})[date] || {})[id] || [];
+
+  function panelCard(s) {
+    const c = card(s);
+    const score = c.querySelector('.score');
+    const acts = el('div', 'acts');
+    for (const [label, d] of ACTIONS) {
+      const b = el('button', d > 0 ? 'good' : '', `${label} ${d > 0 ? '+' : ''}${d}`);
+      b.dataset.act = label;
+      b.append(el('small', '', `當日 ${logOf(s.id).filter(x => x.label === label).length} 次`));
+      acts.append(b);
+    }
+    const undo = el('button', '', '↩️ 復原上一筆');
+    const last = logOf(s.id).at(-1);
+    undo.dataset.undo = '1';
+    undo.disabled = !last || !!last.locked;
+    if (!undo.disabled) undo.textContent += `（${last.label}）`;
+    c.querySelector('.scorerow').remove();
+    c.querySelector('[data-open]').remove();
+    c.append(score, acts, undo);
+    return c;
+  }
+
+  function renderStats() {
+    const n = { present:0, late:0, absent:0, leave:0 };
+    cls().students.forEach(s => n[statusOf(s.id)]++);
+    $('cTotal').textContent = cls().students.length;
+    $('cPresent').textContent = n.present;
+    $('cLate').textContent = n.late;
+    $('cAbsent').textContent = n.absent;
+    $('cLeave').textContent = n.leave;
+  }
+
+  /* ---------- 座位表 ---------- */
+  let arranging = false, chosen = null, opened = null;
+
+  // pos[學生id] = [排, 行]；第 0 排最靠近講台，第 0 行是學生面向講台時的最左邊
+  function layout() {
+    const k = cls();
+    const L = k.layout || (k.layout = { cols: 6, rows: 6, pos: {} });
+    const rows = Math.max(L.rows, Math.ceil(k.students.length / L.cols));
+    const taken = new Map(), waiting = [];
+    for (const s of k.students) {
+      const p = L.pos[s.id];
+      if (p && p[0] < rows && p[1] < L.cols && !taken.has(p.join())) taken.set(p.join(), s);
+      else waiting.push(s);
+    }
+    for (let r = 0; r < rows && waiting.length; r++)
+      for (let c = 0; c < L.cols && waiting.length; c++)
+        if (!taken.has(`${r},${c}`)) {
+          const s = waiting.shift();
+          L.pos[s.id] = [r, c];
+          taken.set(`${r},${c}`, s);
+        }
+    return { L, rows, taken };
+  }
+
+  function desk(s, r, c) {
+    const b = el('button', 'desk');
+    b.dataset.cell = `${r},${c}`;
+    if (!s) {
+      b.classList.add('vacant');
+      b.disabled = !arranging;
+      b.setAttribute('aria-label', '空位');
+      return b;
+    }
+    b.dataset.id = s.id;
+    b.dataset.status = statusOf(s.id);
+    if (s.id === chosen) b.classList.add('chosen');
+    const score = el('span', 'score');
+    score.append(el('span', '', s.score));
+    const status = b.dataset.status === 'present' ? '' : `・${STATUS[b.dataset.status]}`;
+    b.append(el('small', '', `${seatLabel(s)}${status}`), el('strong', '', s.name), score);
+    return b;
+  }
+
+  function renderMap() {
+    const { L, rows, taken } = layout();
+    const cells = [];
+    for (let r = 0; r < rows; r++)
+      for (let c = 0; c < L.cols; c++) cells.push(desk(taken.get(`${r},${c}`), r, c));
+    const teacher = data.teacherView !== false;
+    if (teacher) cells.reverse();   // 老師視角＝旋轉 180 度
+    $('map').style.gridTemplateColumns = `repeat(${L.cols}, minmax(84px, 1fr))`;
+    $('map').replaceChildren(...cells);
+    $('podiumTop').hidden = teacher;
+    $('podiumBottom').hidden = !teacher;
+    $('flipBtn').textContent = teacher ? '👀 目前：老師視角' : '👀 目前：學生視角';
+    $('arrangeBtn').setAttribute('aria-pressed', String(arranging));
+    $('arrangeBtn').textContent = arranging ? '✅ 完成調整' : '✏️ 調整座位';
+    $('arrangeBar').hidden = !arranging;
+    $('tapMode').disabled = arranging;
+    $('colsSelect').value = L.cols;
+    $('rowsSelect').value = rows;
+  }
+
+  function renderPanel() {
+    if (!opened) return;
+    const s = findStudent(opened);
+    if (s) $('studentBox').replaceChildren(panelCard(s));
+    else $('studentDlg').close();
+  }
+
+  // 依班級＋日期記住上課位置
+  const placeOf = d => (cls().place || {})[d] || PLACES[0];
+  const keepPlace = () => (cls().place || (cls().place = {}))[date] = placeOf(date);
+
+  function render() {
+    $('placeSelect').value = placeOf(date);
+    $('classSelect').replaceChildren(...data.classes.map(c => new Option(c.name, c.id)));
+    $('classSelect').value = cls().id;
+    $('dateInput').value = date;
+    const isMap = data.view === 'map';
+    const has = cls().students.length > 0;
+    $('grid').hidden = isMap;
+    $('mapView').hidden = !isMap || !has;
+    $('grid').replaceChildren(...cls().students.map(card));
+    if (isMap && has) renderMap();
+    renderPanel();
+    document.querySelectorAll('[data-view]').forEach(b =>
+      b.setAttribute('aria-pressed', String((b.dataset.view === 'map') === isMap)));
+    $('empty').hidden = cls().students.length > 0;
+    $('delClassBtn').disabled = data.classes.length < 2;
+    $('soundBtn').textContent = data.sound ? '🔊 音效開' : '🔇 音效關';
+    renderStats();
+    renderDone();
+  }
+
+  const isDone = d => !!(cls().done || {})[d];
+
+  function renderDone() {
+    const done = isDone(date);
+    $('doneBtn').textContent = done ? '☑️ 點名已完成' : '✅ 完成點名';
+    $('doneBtn').className = done ? '' : 'primary';
+  }
+
+  let toastTimer;
+  function toast(msg) {
+    $('toast').textContent = msg;
+    $('toast').classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => $('toast').classList.remove('show'), 3500);
+  }
+
+  /* ---------- 音效與動畫 ---------- */
+  let audio;
+  function beep(up) {
+    if (!data.sound) return;
+    try {
+      audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+      audio.resume();
+      const o = audio.createOscillator(), g = audio.createGain(), t = audio.currentTime;
+      o.frequency.setValueAtTime(up ? 660 : 330, t);
+      o.frequency.setValueAtTime(up ? 990 : 220, t + 0.08);
+      g.gain.setValueAtTime(0.15, t);
+      g.gain.exponentialRampToValueAtTime(0.001, t + 0.2);
+      o.connect(g).connect(audio.destination);
+      o.start(t);
+      o.stop(t + 0.2);
+    } catch (_) { /* 裝置不支援音效時略過 */ }
+  }
+
+  function pop(box, delta) {
+    box.classList.remove('bump');
+    void box.offsetWidth;   // 讓動畫可重播
+    box.classList.add('bump');
+    const f = el('i', 'float', delta > 0 ? `+${delta}` : `${delta}`);
+    box.append(f);
+    setTimeout(() => f.remove(), 700);
+  }
+
+  // label 有值時寫入紀錄；復原時不寫入
+  function addScore(id, delta, label = delta > 0 ? '快速加分' : '快速扣分') {
+    const s = findStudent(id);
+    if (!s) return;
+    s.score += delta;
+    if (label) {
+      const log = cls().log || (cls().log = {});
+      const day = log[date] || (log[date] = {});
+      const time = new Date().toTimeString().slice(0, 8);
+      (day[id] || (day[id] = [])).push({ label, delta, time, place: keepPlace() });
+    }
+    save();
+    beep(delta > 0);
+    document.querySelectorAll(`[data-id="${id}"] .score`).forEach(box => {
+      box.querySelector('span').textContent = s.score;
+      pop(box, delta);
+    });
+  }
+
+  function openPanel(id) {
+    opened = id;
+    renderPanel();
+    if (!$('studentDlg').open) $('studentDlg').showModal();
+  }
+
+  function record(id, label) {
+    const delta = ACTIONS.find(a => a[0] === label)[1];
+    addScore(id, delta, label);
+    renderPanel();
+    pop($('studentBox').querySelector('.score'), delta);
+  }
+
+  function undoLast(id) {
+    const last = logOf(id).at(-1);
+    if (!last || last.locked) return;   // 歸零前的紀錄不可復原
+    logOf(id).pop();
+    addScore(id, -last.delta, null);
+    renderPanel();
+  }
+
+  /* ---------- 對話框 ---------- */
+  document.querySelectorAll('dialog [data-close]').forEach(b =>
+    b.addEventListener('click', () => b.closest('dialog').close()));
+
+  let askAction = null;
+  function ask({ title, msg = '', ok = '確定', danger = false, input = null, action }) {
+    $('askTitle').textContent = title;
+    $('askMsg').textContent = msg;
+    $('askOk').textContent = ok;
+    $('askOk').className = danger ? 'danger' : 'primary';
+    $('askInput').hidden = input === null;
+    $('askInput').value = input || '';
+    askAction = action;
+    $('askDlg').showModal();
+  }
+  $('askForm').addEventListener('submit', e => {
+    e.preventDefault();
+    const value = $('askInput').value.trim();
+    if (!$('askInput').hidden && !value) return;
+    $('askDlg').close();
+    askAction(value);
+  });
+
+  /* ---------- 學生卡片操作 ---------- */
+  function cardClick(e) {
+    const b = e.target.closest('button');
+    if (!b) return;
+    const c = b.closest('.card'), id = c.dataset.id;
+
+    if (b.dataset.set) {
+      const day = cls().attendance[date] || (cls().attendance[date] = {});
+      day[id] = b.dataset.set;
+      keepPlace();
+      save();
+      c.dataset.status = b.dataset.set;
+      c.querySelectorAll('[data-set]').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+      renderStats();
+      if (c.parentElement !== $('grid')) render();
+    } else if (b.dataset.edit) {
+      openStudentForm(findStudent(id));
+    } else if (b.dataset.open) {
+      openPanel(id);
+    } else if (b.dataset.act) {
+      record(id, b.dataset.act);
+    } else if (b.dataset.undo) {
+      undoLast(id);
+    } else if (b.dataset.delta) {
+      addScore(id, Number(b.dataset.delta));
+    } else if (b.dataset.del) {
+      const s = findStudent(id);
+      ask({
+        title: '刪除學生', msg: `確定刪除 ${seatLabel(s)} ${s.name}？分數與出席紀錄會一併移除。`,
+        ok: '刪除', danger: true,
+        action: () => {
+          const k = cls();
+          k.students = k.students.filter(x => x.id !== id);
+          Object.values(k.attendance).forEach(day => delete day[id]);
+          Object.values(k.log || {}).forEach(day => delete day[id]);
+          save(); render();
+        }
+      });
+    }
+  }
+  $('grid').addEventListener('click', cardClick);
+  $('studentBox').addEventListener('click', cardClick);
+  $('studentDlg').addEventListener('close', () => { opened = null; });
+
+  /* ---------- 座位表操作 ---------- */
+  for (let n = 1; n <= 10; n++) $('colsSelect').add(new Option(n, n));
+  for (let n = 1; n <= 12; n++) $('rowsSelect').add(new Option(n, n));
+
+  document.querySelectorAll('[data-view]').forEach(b => b.onclick = () => {
+    data.view = b.dataset.view;
+    arranging = false; chosen = null;
+    save(); render();
+  });
+  $('arrangeBtn').onclick = () => { arranging = !arranging; chosen = null; render(); };
+  $('flipBtn').onclick = () => { data.teacherView = data.teacherView === false; save(); render(); };
+  $('colsSelect').onchange = e => { layout().L.cols = Number(e.target.value); render(); save(); };
+  $('rowsSelect').onchange = e => { layout().L.rows = Number(e.target.value); render(); save(); };
+
+  $('arrangeBar').addEventListener('click', e => {
+    const dir = e.target.dataset.fill;
+    if (!dir) return;
+    ask({
+      title: '重新排座位', msg: '目前的座位安排會被覆蓋。', ok: '重新排列',
+      action: () => {
+        const { L, rows } = layout();
+        L.pos = {};
+        cls().students.forEach((s, i) => {
+          L.pos[s.id] = dir === 'row'
+            ? [Math.floor(i / L.cols), i % L.cols]
+            : [i % rows, Math.floor(i / rows)];
+        });
+        L.rows = rows;
+        chosen = null;
+        save(); render();
+      }
+    });
+  });
+
+  $('map').addEventListener('click', e => {
+    const b = e.target.closest('.desk');
+    if (!b) return;
+    const id = b.dataset.id;
+
+    if (arranging) {
+      if (!chosen) chosen = id || null;
+      else {
+        const { L } = layout();
+        const from = L.pos[chosen];
+        L.pos[chosen] = b.dataset.cell.split(',').map(Number);
+        if (id && id !== chosen) L.pos[id] = from;
+        chosen = null;
+        save();
+      }
+      render();
+    } else if (id) {
+      const mode = $('tapMode').value;
+      if (mode === 'panel') openPanel(id);
+      else addScore(id, Number(mode));
+    }
+  });
+
+  /* ---------- 名單管理 ---------- */
+  const normSeat = t => t.normalize('NFKC').trim();
+
+  function parseList(text) {
+    const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    const list = [], bad = [];
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      if (/^(座號|班級)/.test(line) || line === '姓名') continue;
+      // 三欄：班級（3 碼以上）＋座號＋姓名，用於混班上課
+      const g = line.normalize('NFKC').match(/^(\d{3,})\s*班?[\s,、.:]+(\d{1,2})(?!\d)\s*號?[\s,、.:]*(\D.*)$/);
+      if (g) {
+        const name = line.match(/^\S+?[\s,，、.．:：]+[0-9０-９]+\s*號?[\s,，、.．:：]*(.*)$/);
+        list.push({ grp: g[1], seat: String(Number(g[2])), name: (name ? name[1] : g[3]).trim() });
+        continue;
+      }
+      const m = line.match(/^([0-9０-９]+)\s*(?:號)?[\s,，、.．:：]*(.*)$/);
+      if (!m) { bad.push(line); continue; }   // 沒有座號
+      let name = m[2].trim();
+      if (!name && lines[i + 1] && !/^[0-9０-９]/.test(lines[i + 1])) name = lines[++i];
+      if (name) list.push({ grp: '', seat: String(Number(normSeat(m[1]))), name });
+      else bad.push(line);
+    }
+    return { list, bad };
+  }
+
+  function openImport() {
+    $('importText').value = '';
+    $('replaceChk').checked = false;
+    $('importDlg').showModal();
+  }
+  $('importBtn').onclick = openImport;
+  $('emptyImportBtn').onclick = openImport;
+
+  $('importForm').addEventListener('submit', e => {
+    e.preventDefault();
+    const { list, bad } = parseList($('importText').value);
+    if (!list.length) { alert('沒有可匯入的資料。每行請包含座號與姓名，例如：1 王小明'); return; }
+    const replace = $('replaceChk').checked;
+    const apply = () => {
+      const k = cls();
+      if (replace) { k.students = []; k.attendance = {}; k.log = {}; k.done = {}; k.place = {}; if (k.layout) k.layout.pos = {}; }
+      let added = 0, updated = 0;
+      for (const item of list) {
+        const old = k.students.find(s => s.seat === item.seat && (s.grp || '') === item.grp);
+        if (old) { old.name = item.name; updated++; }
+        else { k.students.push({ id: uid(), ...item, score: 0 }); added++; }
+      }
+      sortStudents(); save(); render();
+      toast(`新增 ${added} 人，更新 ${updated} 人`);
+      if (bad.length) alert(`以下 ${bad.length} 行格式無法辨識，未匯入：\n${bad.join('\n')}`);
+    };
+    $('importDlg').close();
+    if (replace && cls().students.length) {
+      ask({ title: '取代整個名單', msg: '目前的名單、分數、出席與評分紀錄將全部清除，無法復原。', ok: '確定取代', danger: true, action: apply });
+    } else apply();
+  });
+
+  let editing = null;   // 修改中的學生 id；null 代表新增
+  function openStudentForm(s) {
+    editing = s ? s.id : null;
+    $('addForm').reset();
+    $('addTitle').textContent = s ? '修改學生資料' : '新增學生';
+    $('addOk').textContent = s ? '儲存' : '新增';
+    if (s) { $('addGrp').value = s.grp || ''; $('addSeat').value = s.seat; $('addName').value = s.name; }
+    $('addDlg').showModal();
+  }
+  $('addBtn').onclick = () => openStudentForm(null);
+  $('addForm').addEventListener('submit', e => {
+    e.preventDefault();
+    const raw = normSeat($('addSeat').value), name = $('addName').value.trim();
+    if (!/^\d+$/.test(raw)) { alert('座號請輸入數字'); return; }
+    if (!name) { alert('請輸入姓名'); return; }
+    const seat = String(Number(raw)), grp = normSeat($('addGrp').value);
+    if (cls().students.some(s => s.seat === seat && (s.grp || '') === grp && s.id !== editing)) { alert(`座號 ${seat} 已存在`); return; }
+    const old = editing && findStudent(editing);
+    if (old) Object.assign(old, { grp, seat, name });   // id 不變，分數與紀錄、座位都保留
+    else cls().students.push({ id: uid(), grp, seat, name, score: 0 });
+    sortStudents(); save(); render();
+    $('addDlg').close();
+    toast(old ? `已更新 ${seatLabel({ grp, seat })} ${name}` : `已新增 ${name}`);
+  });
+
+  /* ---------- 班級與日期 ---------- */
+  $('classSelect').onchange = e => { chosen = null; data.current = e.target.value; save(); render(); };
+  $('addClassBtn').onclick = () => ask({
+    title: '新增班級', msg: '請輸入班級名稱，例如：七年一班', input: '',
+    action: name => { const c = newClass(name); data.classes.push(c); data.current = c.id; save(); render(); }
+  });
+  $('renameClassBtn').onclick = () => ask({
+    title: '修改班級名稱', input: cls().name,
+    action: name => { cls().name = name; save(); render(); }
+  });
+  $('delClassBtn').onclick = () => ask({
+    title: '刪除班級', msg: `確定刪除「${cls().name}」？名單、分數與出席紀錄都會永久移除。`, ok: '刪除', danger: true,
+    action: () => {
+      data.classes = data.classes.filter(c => c.id !== cls().id);
+      data.current = data.classes[0].id;
+      save(); render();
+    }
+  });
+  $('dateInput').onchange = e => {
+    date = e.target.value || today();
+    followToday = date === today();
+    render();
+  };
+  for (const name of PLACES) $('placeSelect').add(new Option(name, name));
+  $('placeSelect').onchange = e => {
+    const value = e.target.value;
+    syncDate();
+    (cls().place || (cls().place = {}))[date] = value;
+    $('placeSelect').value = value;
+    save();
+    toast(`${date} 上課位置：${value}`);
+  };
+  $('soundBtn').onclick = () => { data.sound = !data.sound; save(); render(); beep(true); };
+
+  /* ---------- 隨機抽籤 ---------- */
+  let picked = null, last = null, rolling = null;
+
+  function showStudent(s) {
+    $('drawSeat').textContent = seatLabel(s);
+    $('drawName').textContent = s.name;
+  }
+  function setDrawButtons(disabled) {
+    document.querySelectorAll('#drawBtns button, #againBtn').forEach(b => b.disabled = disabled);
+  }
+  function randomIndex(n) { return Math.floor(Math.random() * n); }
+
+  function draw() {
+    syncDate();
+    const pool = cls().students.filter(s => statusOf(s.id) === 'present');
+    if (!pool.length) { toast('目前沒有「出席」的學生可抽'); return; }
+    // 人數大於 1 時，避免連續抽到同一人
+    const choices = pool.length > 1 ? pool.filter(s => s.id !== last) : pool;
+    const winner = choices[randomIndex(choices.length)];
+    picked = null;
+    setDrawButtons(true);
+    $('drawScore').textContent = '抽籤中…';
+    showStudent(pool[randomIndex(pool.length)]);
+    if (!$('drawDlg').open) $('drawDlg').showModal();
+
+    let ticks = 0;
+    clearInterval(rolling);
+    rolling = setInterval(() => {
+      if (++ticks < 12) { showStudent(pool[randomIndex(pool.length)]); return; }
+      clearInterval(rolling);
+      picked = last = winner.id;
+      showStudent(winner);
+      $('drawScore').textContent = `目前積分：${winner.score}`;
+      setDrawButtons(false);
+      beep(true);
+    }, 80);
+  }
+  $('drawBtn').onclick = draw;
+  $('againBtn').onclick = draw;
+  $('drawDlg').addEventListener('close', () => clearInterval(rolling));
+  $('drawBtns').addEventListener('click', e => {
+    const b = e.target.closest('button');
+    if (!b || !picked) return;
+    const delta = Number(b.dataset.delta);
+    syncDate();
+    addScore(picked, delta, '抽籤回答');
+    $('drawScore').replaceChildren(el('span', '', `目前積分：${findStudent(picked).score}`));
+    pop($('drawScore'), delta);
+  });
+
+  /* ---------- 完成點名 ---------- */
+  $('doneBtn').onclick = () => {
+    syncDate();
+    const k = cls();
+    if (!k.students.length) { toast('請先匯入名單'); return; }
+    // 把每位學生的狀態（含預設出席）寫入當日紀錄
+    const day = k.attendance[date] || (k.attendance[date] = {});
+    k.students.forEach(s => day[s.id] = statusOf(s.id));
+    (k.done || (k.done = {}))[date] = true;
+    keepPlace();
+    save(); renderDone();
+    toast(`已儲存 ${date} 點名紀錄`);
+  };
+
+  /* ---------- 匯出 CSV ---------- */
+  function csvCell(v) {
+    let s = String(v);
+    if (typeof v === 'string' && /^[=+\-@\t\r]/.test(s)) s = "'" + s;   // 防止 Excel 當成公式
+    return `"${s.replace(/"/g, '""')}"`;
+  }
+  function recordedDates() {
+    const k = cls(), set = new Set(Object.keys(k.done || {}));
+    for (const [d, day] of Object.entries(k.attendance))
+      if (Object.keys(day).length) set.add(d);
+    for (const [d, day] of Object.entries(k.log || {}))
+      if (Object.values(day).some(list => list.length)) set.add(d);
+    return [...set].sort();
+  }
+
+  let report = null;   // { name, csv }
+  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+
+  function showOutput(rows, title, from, to) {
+    const csv = '\uFEFF' + rows.map(r => r.map(csvCell).join(',')).join('\r\n');
+    const range = from === to ? from : `${from}至${to}`;
+    const name = `${cls().name.replace(/[\\/:*?"<>|]/g, '_')}_${range}_${title}.csv`;
+    report = { name, csv };
+    // 複製用：Tab 分隔，貼到試算表會自動分欄
+    $('outputText').value = rows.map(r => r.map(v => {
+      const t = String(v).replace(/[\t\r\n]+/g, ' ');
+      return typeof v === 'string' && /^[=+\-@]/.test(t) ? "'" + t : t;
+    }).join('\t')).join('\n');
+    $('outputTitle').textContent = `${title}（${rows.length - 1} 筆）`;
+    $('outputMsg').textContent = '';
+    const canShare = !!shareData();
+    // iPad／iPhone：用分享選單讓老師自己選儲存位置，取代找不到檔案的直接下載
+    $('shareBtn').hidden = !canShare;
+    $('shareBtn').textContent = isIOS ? '📁 儲存 CSV（選擇資料夾）' : '📨 分享／儲存到…';
+    $('downloadBtn').hidden = isIOS && canShare;
+    if (isIOS) $('outputMsg').textContent = canShare
+      ? '按「儲存 CSV」後，在選單中點「儲存到檔案」，選擇資料夾再按「儲存」。'
+      : '目前的開啟方式無法直接指定儲存位置。建議按「複製內容」，貼到 Numbers 或 Google 試算表。';
+    $('exportDlg').close();
+    $('outputDlg').showModal();
+  }
+
+  function shareData() {
+    try {
+      const files = [new File([report.csv], report.name, { type: 'text/csv' })];
+      return navigator.share && navigator.canShare && navigator.canShare({ files }) ? { files } : null;
+    } catch (_) { return null; }
+  }
+
+  $('shareBtn').onclick = async () => {
+    try { await navigator.share(shareData()); }
+    catch (e) {
+      if (e.name !== 'AbortError') $('outputMsg').textContent = '此瀏覽器無法分享檔案，請改用「複製內容」。';
+    }
+  };
+
+  $('copyBtn').onclick = async () => {
+    const box = $('outputText');
+    let ok = false;
+    try { await navigator.clipboard.writeText(box.value); ok = true; }
+    catch (_) {
+      box.focus(); box.select(); box.setSelectionRange(0, box.value.length);
+      ok = document.execCommand('copy');
+    }
+    $('outputMsg').textContent = ok ? '✅ 已複製，請到試算表的 A1 儲存格貼上。' : '無法自動複製，請長按下方文字，全選後複製。';
+  };
+
+  $('downloadBtn').onclick = () => {
+    const url = URL.createObjectURL(new Blob([report.csv], { type: 'text/csv;charset=utf-8' }));
+    const a = el('a');
+    a.href = url;
+    a.download = report.name;
+    $('outputDlg').append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    $('outputMsg').textContent = `已送出下載：${report.name}`;
+  };
+
+  function exportRecords(detail) {
+    const k = cls(), from = $('fromInput').value, to = $('toInput').value;
+    if (!from || !to || from > to) { alert('請確認開始與結束日期'); return; }
+    const dates = recordedDates().filter(d => d >= from && d <= to);
+    const rows = [detail
+      ? ['日期', '時間', '班級', '上課位置', '學生班級', '座號', '姓名', '評分項目', '分數']
+      : ['日期', '班級', '上課位置', '學生班級', '座號', '姓名', '出席狀態', '點名確認', '當日加減分', '當日評分紀錄', '目前總分']];
+    for (const d of dates) {
+      for (const s of k.students) {
+        const list = ((k.log || {})[d] || {})[s.id] || [];
+        if (detail) {
+          list.forEach(x => rows.push([d, x.time || '', k.name, x.place || '', s.grp || '', Number(s.seat), s.name, x.label, x.delta]));
+          continue;
+        }
+        const status = (k.attendance[d] || {})[s.id];
+        const done = !!(k.done || {})[d];
+        const count = {};
+        list.forEach(x => count[x.label] = (count[x.label] || 0) + 1);
+        // 同一天換過教室時，一併列出
+        const places = new Set([(k.place || {})[d], ...list.map(x => x.place)].filter(Boolean));
+        rows.push([d, k.name, [...places].join('、'), s.grp || '', Number(s.seat), s.name,
+          status ? STATUS[status] : done ? '無紀錄' : STATUS.present,
+          done && status ? '已完成' : '未確認',
+          list.reduce((sum, x) => sum + x.delta, 0),
+          Object.entries(count).map(([label, n]) => `${label}×${n}`).join('、'),
+          s.score]);
+      }
+    }
+    if (rows.length === 1) { alert(detail ? '此範圍沒有評分紀錄' : '此範圍沒有紀錄。上課點名後請按「完成點名」。'); return; }
+    showOutput(rows, detail ? '評分明細' : '每日總表', from, to);
+  }
+
+  $('exportBtn').onclick = () => {
+    syncDate();
+    if (!cls().students.length) { toast('沒有學生資料可匯出'); return; }
+    const dates = recordedDates();
+    $('fromInput').value = dates[0] || date;
+    $('toInput').value = [date, dates.at(-1) || date].sort()[1];
+    $('exportDlg').showModal();
+  };
+  $('dailyBtn').onclick = () => exportRecords(false);
+  $('detailBtn').onclick = () => exportRecords(true);
+
+  /* ---------- 重置 ---------- */
+  $('resetBtn').onclick = () => { syncDate(); $('resetDlg').showModal(); };
+  $('resetDlg').addEventListener('click', e => {
+    const type = e.target.dataset.reset;
+    if (!type) return;
+    $('resetDlg').close();
+    const label = { att: `重置 ${date} 的點名`, score: '全班分數歸零', both: `重置 ${date} 點名並將分數歸零` }[type];
+    ask({
+      title: '再次確認', msg: `即將對「${cls().name}」執行：${label}。此動作無法復原。`, ok: '確定執行', danger: true,
+      action: () => {
+        if (type !== 'score') { delete cls().attendance[date]; if (cls().done) delete cls().done[date]; }
+        if (type !== 'att') {
+          cls().students.forEach(s => s.score = 0);
+          Object.values(cls().log || {}).forEach(day => Object.values(day).forEach(list => list.forEach(x => x.locked = true)));
+        }
+        save(); render();
+        toast('已完成');
+      }
+    });
+  });
+
+  /* ---------- 啟動 ---------- */
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) syncDate(); });
+  // 跨日後第一次點擊前先切換到今天，避免寫入前一天的紀錄
+  ['grid', 'map', 'studentBox'].forEach(i => $(i).addEventListener('pointerdown', syncDate));
+  setInterval(() => { if (!document.querySelector('dialog[open]')) syncDate(); }, 30000);
+  // 同一瀏覽器開多個分頁時保持同步
+  window.addEventListener('storage', e => {
+    if (e.key !== KEY) return;
+    const current = data.current;
+    data = load();
+    if (data.classes.some(c => c.id === current)) data.current = current;
+    render();
+  });
+
+  render();
+  save();
+})();
+</script>
+</body>
+</html>
