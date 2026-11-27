@@ -131,6 +131,7 @@
     <button id="addBtn">➕ 新增學生</button>
     <button id="exportBtn">📤 匯出 CSV 報表</button>
     <button id="resetBtn">♻️ 重置／歸零</button>
+    <button id="backupBtn">💾 備份／還原</button>
     <button id="soundBtn"></button>
   </div>
   <div class="row" style="margin-top:8px">
@@ -251,6 +252,24 @@
     <button id="downloadBtn">⬇️ 下載 CSV 檔</button>
     <p id="outputMsg" role="status"></p>
     <textarea id="outputText" readonly aria-label="報表內容" wrap="off"></textarea>
+  </div>
+  <div class="actions"><button data-close>關閉</button></div>
+</dialog>
+
+<dialog id="backupDlg">
+  <h2>💾 備份／還原</h2>
+  <p>備份包含<b>所有班級</b>的名單、出席、分數、評分紀錄、座位表與上課位置。檔案內有學生個資，請妥善保存。</p>
+  <div class="stack">
+    <button class="primary" id="saveBackupBtn">📁 儲存備份檔</button>
+    <button id="copyBackupBtn">📋 複製備份文字</button>
+    <hr>
+    <p><b>還原</b>會用備份內容<b>取代</b>這台裝置上的全部資料（不是合併）。</p>
+    <button id="pickBtn">📂 選擇備份檔還原</button>
+    <input type="file" id="fileInput" accept=".txt,.json,text/plain,application/json" hidden>
+    <textarea id="backupText" placeholder="或把備份文字貼在這裡，再按下方按鈕" aria-label="備份文字"></textarea>
+    <button id="pasteRestoreBtn">用貼上的文字還原</button>
+    <button id="undoRestoreBtn">↩️ 取消上次還原</button>
+    <p id="backupMsg" role="status"></p>
   </div>
   <div class="actions"><button data-close>關閉</button></div>
 </dialog>
@@ -1027,6 +1046,132 @@
   };
   $('dailyBtn').onclick = () => exportRecords(false);
   $('detailBtn').onclick = () => exportRecords(true);
+
+  /* ---------- 備份／還原 ---------- */
+  const UNDO_KEY = KEY + '-before-restore';
+  const say = msg => $('backupMsg').textContent = msg;
+
+  function backupContent() {
+    return JSON.stringify({ app: KEY, savedAt: new Date().toISOString(), data });
+  }
+
+  const isObject = v => !!v && typeof v === 'object' && !Array.isArray(v);
+  const validId = v => typeof v === 'string' && /^[a-z0-9]+$/i.test(v);
+
+  // 回傳備份內容；格式不對回傳 null
+  function readBackup(text) {
+    try {
+      const b = JSON.parse(text.replace(/^\uFEFF/, '').trim());
+      const ok = b.app === KEY && Array.isArray(b.data.classes) && b.data.classes.length &&
+        b.data.classes.every(c => validId(c.id) && typeof c.name === 'string' && isObject(c.attendance) &&
+          Array.isArray(c.students) && c.students.every(s =>
+            validId(s.id) && typeof s.seat === 'string' && typeof s.name === 'string' && Number.isFinite(s.score)));
+      return ok ? b : null;
+    } catch (_) { return null; }
+  }
+
+  function replaceData(next) {
+    data = next;
+    date = today();
+    followToday = true;
+    arranging = false; chosen = null; picked = null; last = null;
+    save(); render();
+  }
+
+  function restore(text) {
+    const b = readBackup(text);
+    if (!b) { say('⚠️ 這不是完整的備份內容，資料沒有任何變動。'); return; }
+    const count = d => `${d.classes.length} 個班級、${d.classes.reduce((n, c) => n + c.students.length, 0)} 位學生`;
+    const when = new Date(b.savedAt).toLocaleString('zh-TW');
+    ask({
+      title: '確認還原',
+      msg: `備份時間：${when}（${count(b.data)}）。目前這台裝置有 ${count(data)}，還原後會被取代。`,
+      ok: '確定還原', danger: true,
+      action: () => {
+        // 先留一份目前資料，供「取消上次還原」使用
+        try { localStorage.setItem(UNDO_KEY, backupContent()); }
+        catch (_) { say('⚠️ 儲存空間不足，為避免資料遺失，已停止還原。'); return; }
+        replaceData(b.data);
+        $('backupText').value = '';
+        $('undoRestoreBtn').disabled = false;
+        say(`✅ 已還原：${count(data)}`);
+      }
+    });
+  }
+
+  $('backupBtn').onclick = () => {
+    $('backupText').value = '';
+    say('');
+    let has = false;
+    try { has = !!localStorage.getItem(UNDO_KEY); } catch (_) {}
+    $('undoRestoreBtn').disabled = !has;
+    $('backupDlg').showModal();
+  };
+
+  $('saveBackupBtn').onclick = async () => {
+    const d = new Date(), p = n => String(n).padStart(2, '0');
+    const name = `點名備份_${today()}_${p(d.getHours())}${p(d.getMinutes())}.txt`;
+    const content = backupContent();
+    if (isIOS) {
+      try {
+        const files = [new File([content], name, { type: 'text/plain' })];
+        if (navigator.canShare && navigator.canShare({ files })) {
+          await navigator.share({ files });
+          say(`已開啟分享選單。請確認「檔案」App 裡有 ${name}`);
+          return;
+        }
+      } catch (e) {
+        say(e.name === 'AbortError' ? '已取消，尚未儲存備份。' : '無法儲存檔案，請改用「複製備份文字」。');
+        return;
+      }
+    }
+    const url = URL.createObjectURL(new Blob([content], { type: 'text/plain;charset=utf-8' }));
+    const a = el('a');
+    a.href = url;
+    a.download = name;
+    $('backupDlg').append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    say(`已送出下載：${name}`);
+  };
+
+  $('copyBackupBtn').onclick = async () => {
+    const content = backupContent();
+    try {
+      await navigator.clipboard.writeText(content);
+      say('✅ 已複製。請貼到備忘錄或傳給自己的另一台裝置。');
+    } catch (_) {
+      $('backupText').value = content;
+      $('backupText').select();
+      say('無法自動複製，請在文字框內全選後複製。');
+    }
+  };
+
+  $('pickBtn').onclick = () => $('fileInput').click();
+  $('fileInput').onchange = async e => {
+    const file = e.target.files[0];
+    e.target.value = '';   // 讓同一個檔案可再選一次
+    if (!file) return;
+    try { restore(await file.text()); }
+    catch (_) { say('⚠️ 無法讀取檔案'); }
+  };
+  $('pasteRestoreBtn').onclick = () => restore($('backupText').value);
+
+  $('undoRestoreBtn').onclick = () => {
+    let b = null;
+    try { b = readBackup(localStorage.getItem(UNDO_KEY) || ''); } catch (_) {}
+    if (!b) { say('沒有可取消的還原'); return; }
+    ask({
+      title: '取消上次還原', msg: '回到還原之前的資料。還原後新增的紀錄會消失。', ok: '確定', danger: true,
+      action: () => {
+        replaceData(b.data);
+        localStorage.removeItem(UNDO_KEY);
+        $('undoRestoreBtn').disabled = true;
+        say('✅ 已回到還原前的資料');
+      }
+    });
+  };
 
   /* ---------- 重置 ---------- */
   $('resetBtn').onclick = () => { syncDate(); $('resetDlg').showModal(); };
