@@ -128,6 +128,8 @@
     <button id="delClassBtn">刪班級</button>
     <span class="spacer"></span>
     <label>📍 上課位置 <select id="placeSelect"></select></label>
+    <button id="addPlaceBtn">＋位置</button>
+    <button id="delPlaceBtn" hidden>刪除此位置</button>
     <input type="date" id="dateInput" aria-label="點名日期">
   </div>
   <div class="row" style="margin-top:8px">
@@ -224,7 +226,7 @@
   <form id="askForm">
     <h2 id="askTitle"></h2>
     <p id="askMsg"></p>
-    <input id="askInput" style="width:100%" aria-label="班級名稱">
+    <input id="askInput" style="width:100%" aria-label="名稱">
     <div class="actions">
       <button type="button" data-close>取消</button>
       <button type="submit" id="askOk"></button>
@@ -317,7 +319,7 @@
   const STATUS = { present:'出席', late:'遲到', absent:'缺席', leave:'請假' };
   // 評分面板項目：要增減或改分數，改這裡即可
   const ACTIONS = [['發言積極', 1], ['睡覺', -1], ['講話', -1], ['不禮貌', -2], ['吃東西', -1]];
-  // 上課位置選項：第一個是預設值
+  // 內建上課位置：第一個是預設值；老師自行新增的存在 data.places
   const PLACES = ['原班級', '客語教室', '閩語教室', '平板教室'];
   const $ = id => document.getElementById(id);
   const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
@@ -548,8 +550,26 @@
   const placeOf = d => (cls().place || {})[d] || PLACES[0];
   const keepPlace = () => (cls().place || (cls().place = {}))[date] = placeOf(date);
 
+  const customPlaces = () => Array.isArray(data.places) ? data.places : [];
+
+  function renderPlaces() {
+    const current = placeOf(date);
+    // 已刪除的位置若仍用在這一天的紀錄，選單照樣顯示
+    const names = [...new Set([...PLACES, ...customPlaces(), current])];
+    $('placeSelect').replaceChildren(...names.map(n => new Option(n, n)));
+    $('placeSelect').value = current;
+    $('delPlaceBtn').hidden = !customPlaces().includes(current);
+  }
+
+  function setPlace(name) {
+    syncDate();
+    (cls().place || (cls().place = {}))[date] = name;
+    save(); renderPlaces();
+    toast(`${date} 上課位置：${name}`);
+  }
+
   function render() {
-    $('placeSelect').value = placeOf(date);
+    renderPlaces();
     $('classSelect').replaceChildren(...data.classes.map(c => new Option(c.name, c.id)));
     $('classSelect').value = cls().id;
     $('dateInput').value = date;
@@ -889,14 +909,24 @@
     followToday = date === today();
     render();
   };
-  for (const name of PLACES) $('placeSelect').add(new Option(name, name));
-  $('placeSelect').onchange = e => {
-    const value = e.target.value;
-    syncDate();
-    (cls().place || (cls().place = {}))[date] = value;
-    $('placeSelect').value = value;
-    save();
-    toast(`${date} 上課位置：${value}`);
+  $('placeSelect').onchange = e => setPlace(e.target.value);
+  $('addPlaceBtn').onclick = () => ask({
+    title: '新增上課位置', msg: '例如：視聽教室、圖書館。各班級都能選用。', input: '', ok: '新增',
+    action: name => {
+      if (!PLACES.includes(name) && !customPlaces().includes(name)) data.places = [...customPlaces(), name];
+      setPlace(name);
+    }
+  });
+  $('delPlaceBtn').onclick = () => {
+    const name = placeOf(date);
+    ask({
+      title: '刪除上課位置', msg: `從選單移除「${name}」？已記下的紀錄仍保留此名稱。目前這一天會改為「${PLACES[0]}」。`,
+      ok: '刪除', danger: true,
+      action: () => {
+        data.places = customPlaces().filter(n => n !== name);
+        setPlace(PLACES[0]);
+      }
+    });
   };
   $('soundBtn').onclick = () => { data.sound = !data.sound; save(); render(); beep(true); };
 
